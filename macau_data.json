@@ -1,0 +1,91 @@
+{
+  "version": 3,
+  "updated": "2026-10-17",
+  "source": "文化局 wh.mo",
+  "spots": {
+    "st-paul": {
+      "openHour": 0,
+      "closeHour": 24
+    },
+    "na-tcha": {
+      "openHour": 8,
+      "closeHour": 17
+    },
+    "fortress": {
+      "openHour": 7,
+      "closeHour": 19
+    },
+    "museum-macau": {
+      "openHour": 10,
+      "closeHour": 18
+    },
+    "st-dominic": {
+      "openHour": 10,
+      "closeHour": 18
+    },
+    "senado-square": {
+      "openHour": 0,
+      "closeHour": 24
+    },
+    "a-ma-temple": {
+      "openHour": 7,
+      "closeHour": 18
+    },
+    "lou-kau": {
+      "openHour": 10,
+      "closeHour": 18
+    },
+    "se-cathedral": {
+      "openHour": 8,
+      "closeHour": 20
+    },
+    "misericordia": {
+      "openHour": 10,
+      "closeHour": 17
+    },
+    "moorish-barracks": {
+      "openHour": 9,
+      "closeHour": 18
+    },
+    "mandarin-house": {
+      "openHour": 10,
+      "closeHour": 18
+    },
+    "lilau": {
+      "openHour": 0,
+      "closeHour": 24
+    },
+    "st-lawrence": {
+      "openHour": 7,
+      "closeHour": 18
+    },
+    "guia-fortress": {
+      "openHour": 9,
+      "closeHour": 18
+    },
+    "old-protestant-cemetery": {
+      "openHour": 9,
+      "closeHour": 17
+    },
+    "osm-sam-kai-vui-kun-temple": {
+      "openHour": 9,
+      "closeHour": 18
+    },
+    "osm-st-anthony-s-church": {
+      "openHour": 7,
+      "closeHour": 18
+    },
+    "casa-garden": {
+      "openHour": 10,
+      "closeHour": 19
+    },
+    "st-augustine": {
+      "openHour": 10,
+      "closeHour": 18
+    },
+    "ho-tung-library": {
+      "openHour": 8,
+      "closeHour": 20
+    }
+  }
+}
