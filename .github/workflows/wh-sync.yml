@@ -1,0 +1,219 @@
+name: 文化局開放時間自動更新
+
+on:
+  schedule:
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 讀文化局網站，更新 macau_data.json
+        run: |
+          cat > /tmp/wh_sync.py <<'PY'
+          """每星期自動由文化局 wh.mo 更新 macau_data.json 嘅開放時間同休館日。
+
+          規則好嚴：每個景點都要讀到預期格式（時間段數量、分區標題、休館字眼）先會改；
+          讀唔明（例如官網改版、加咗「暫停開放」）就唔改嗰個點，並喺 autoSync.failed 記低，
+          app 會顯示「資料未能更新」。
+          """
+          import datetime, html, json, math, re, sys, time, urllib.request
+
+          BASE = 'https://www.wh.mo'
+          DATA = sys.argv[1] if len(sys.argv) > 1 else 'macau_data.json'
+
+          # app 地點 id → (wh.mo 頁, 名稱關鍵字, 分區標題, 分區完結標題, 用邊段時間)
+          # pick：數字 = 用第幾段（要有 n 段）；'span' = 由第一段開門到最後一段關門。
+          SPECS = {
+              'a-ma-temple': (1, '媽閣廟', None, None, 0, 1),
+              'moorish-barracks': (2, '摩爾兵營', None, None, 0, 1),
+              'lilau': (3, '亞婆井', None, None, 'allday', 0),
+              'mandarin-house': (4, '鄭家大屋', None, None, 0, 1),
+              'st-lawrence': (5, '聖老楞佐', None, None, 0, 2),
+              'dom-pedro': (8, '崗頂劇院', None, None, 0, 1),
+              'ho-tung-library': (9, '何東圖書館', None, None, 1, 2),
+              'st-augustine': (10, '聖奧斯定', None, None, 0, 1),
+              'senado-square': (12, '議事亭', None, None, 'allday', 0),
+              'osm-sam-kai-vui-kun-temple': (13, '三街會館', None, None, 0, 1),
+              'misericordia': (14, '仁慈堂', '仁慈堂博物館', None, 'span', 2),
+              'se-cathedral': (15, '主教座堂', None, None, 0, 1),
+              'lou-kau': (16, '盧家大屋', None, None, 0, 1),
+              'st-dominic': (17, '玫瑰聖母堂', None, None, 0, 1),
+              'st-paul': (18, '大三巴', '大三巴牌坊', '天主教藝術博物館和墓室', 'allday', 0),
+              'na-tcha': (19, '哪咤廟', None, '哪咤展館', 0, 1),
+              'fortress': (21, '大炮台', '炮台及花園', '澳門博物館', 0, 1),
+              'museum-macau': (21, '大炮台', '澳門博物館', None, 0, 1),
+              'osm-st-anthony-s-church': (22, '聖安多尼', None, None, 0, 1),
+              'casa-garden': (23, '東方基金會', None, None, 0, 1),
+              'old-protestant-cemetery': (24, '基督教墳場', None, None, 0, 1),
+              'guia-fortress': (25, '東望洋炮台', '炮台', '聖母雪地殿聖堂', 0, 1),
+          }
+
+          RANGE = re.compile(r'(\d{1,2}):(\d{2})\s*[-–~至]\s*(\d{1,2}):(\d{2})')
+          DAYS = {'一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 7, '天': 7}
+          BAD = re.compile(r'暫停|暂停|維修|关闭|關閉|不開放|不對外|休|停止開放|另行通知')
+
+
+          class Unreadable(Exception):
+              pass
+
+
+          def get(path):
+              for attempt in range(3):
+                  try:
+                      req = urllib.request.Request(BASE + path, headers={'User-Agent': 'Mozilla/5.0'})
+                      with urllib.request.urlopen(req, timeout=30) as r:
+                          return r.read().decode('utf-8', 'ignore')
+                  except Exception:
+                      if attempt == 2:
+                          raise
+                      time.sleep(5)
+
+
+          def lines_of(page):
+              page = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', page, flags=re.S)
+              text = html.unescape(re.sub(r'<[^>]+>', '\n', page))
+              return [l.strip() for l in text.split('\n') if l.strip()]
+
+
+          def page_block(i):
+              page = get(f'/cn/site/detail/{i}')
+              h = re.search(r'<h[1-3][^>]*>(.*?)</h[1-3]>', page, re.S)
+              name = html.unescape(re.sub(r'<[^>]+>', '', h.group(1))).strip() if h else ''
+              ls = lines_of(page)
+              at = [k for k, l in enumerate(ls) if l == '開放時間']
+              if len(at) < 2:
+                  raise Unreadable('搵唔到「開放時間」')
+              block = []
+              for l in ls[at[1] + 1:at[1] + 17]:
+                  if l == '簡介':
+                      break
+                  block.append(l)
+              return name, block
+
+
+          def closure_days(line):
+              m = re.match(r'^逢((?:星期[一二三四五六日天](?:及|、|和)?)+)(?:及[^，,]*)?(休館|休息)', line)
+              if not m or re.search(r'\d', line):
+                  raise Unreadable(f'休館字眼睇唔明：{line}')
+              return sorted({DAYS[c] for c in re.findall(r'星期([一二三四五六日天])', m.group(1))})
+
+
+          def parse(block, sub, until, pick, n):
+              if sub is not None:
+                  if block.count(sub) != 1:
+                      raise Unreadable(f'搵唔到分區「{sub}」')
+                  block = block[block.index(sub) + 1:]
+              if until is not None:
+                  if until not in block:
+                      raise Unreadable(f'搵唔到分區「{until}」')
+                  block = block[:block.index(until)]
+              ranges, closed, allday = [], [], False
+              for line in block:
+                  if line.startswith('逢'):
+                      closed += closure_days(line)
+                  elif line == '全日開放':
+                      allday = True
+                  elif RANGE.search(line) and not BAD.search(line):
+                      ranges += RANGE.findall(line)
+                  else:
+                      raise Unreadable(f'睇唔明：{line}')
+              if pick == 'allday':
+                  if not allday or ranges or closed:
+                      raise Unreadable('唔再係全日開放')
+                  return 0, 24, []
+              if allday or len(ranges) != n:
+                  raise Unreadable(f'時間段數目唔啱（{len(ranges)}／{n}）')
+              r = [tuple(int(x) for x in t) for t in ranges]
+              a, b = (r[0], r[-1]) if pick == 'span' else (r[pick], r[pick])
+              o, c = math.ceil(a[0] + a[1] / 60), math.floor(b[2] + b[3] / 60)
+              if not 0 <= o < c <= 24:
+                  raise Unreadable('時間唔合理')
+              return o, c, sorted(set(closed))
+
+
+          def main():
+              today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).strftime('%Y-%m-%d')
+              data = json.load(open(DATA, encoding='utf-8'))
+              old = json.dumps(data, ensure_ascii=False, sort_keys=True)
+              spots = data.setdefault('spots', {})
+              sync = data.get('autoSync') or {}
+              failed, notes, changed = [], [], []
+              pages = {}
+              try:
+                  listing = get('/cn/content/site/')
+                  found = set(int(i) for i in re.findall(r'/cn/site/detail/(\d+)', listing))
+                  if len(found) < 20:
+                      raise Unreadable(f'景點列表得 {len(found)} 個')
+                  for sid, (page, kw, sub, until, pick, n) in SPECS.items():
+                      try:
+                          if page not in pages:
+                              pages[page] = page_block(page)
+                          name, block = pages[page]
+                          if kw not in name:
+                              raise Unreadable(f'頁面名稱變咗：{name}')
+                          o, c, days = parse(block, sub, until, pick, n)
+                          new = {'openHour': o, 'closeHour': c, 'closedDays': days}
+                          cur = spots.get(sid, {})
+                          if any(cur.get(k) != v for k, v in new.items()):
+                              changed.append(f'{sid}: {cur} → {new}')
+                              cur.update(new)
+                              spots[sid] = cur
+                      except Unreadable as e:
+                          failed.append(sid)
+                          notes.append(f'{sid}（{BASE}/cn/site/detail/{page}）：{e}')
+                  ok = not failed
+                  error = None
+              except Exception as e:  # 成個網站讀唔到
+                  ok, failed, error = False, sorted(SPECS), f'{type(e).__name__}: {e}'
+                  notes.append(f'成個網站讀唔到：{error}')
+              if changed:
+                  data['updated'] = today
+              data['source'] = '文化局 wh.mo'
+              data['autoSync'] = {
+                  'checked': today,
+                  'ok': ok,
+                  'lastOk': today if ok else sync.get('lastOk'),
+                  'failed': sorted(failed),
+              }
+              if json.dumps(data, ensure_ascii=False, sort_keys=True) != old:
+                  data['version'] = int(data.get('version', 2)) + 1
+                  json.dump(data, open(DATA, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+                  open(DATA, 'a', encoding='utf-8').write('\n')
+              print(f'ok={ok} changed={len(changed)} failed={len(failed)} version={data.get("version")}')
+              for l in changed:
+                  print('改咗', l)
+              for l in notes:
+                  print('未能更新', l)
+              if notes:
+                  open('sync_problems.md', 'w', encoding='utf-8').write(
+                      '文化局網站有啲開放時間讀唔明，呢啲景點今次冇自動更新，app 會顯示「資料未能更新」。'
+                      '請叫 Devin 睇睇程式。\n\n' + '\n'.join(f'- {l}' for l in notes) + '\n')
+
+
+          if __name__ == '__main__':
+              main()
+
+          PY
+          python3 /tmp/wh_sync.py macau_data.json
+
+      - name: 儲存
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add macau_data.json
+          git diff --cached --quiet || git commit -m "自動更新文化局開放時間 $(date +%F)"
+          git push
+
+      - name: 讀唔到就開 Issue 通知
+        if: hashFiles('sync_problems.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue create --title "文化局資料未能自動更新 $(date +%F)" --body-file sync_problems.md
