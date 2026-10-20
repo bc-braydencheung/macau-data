@@ -1,91 +1,135 @@
 {
-  "version": 3,
-  "updated": "2026-10-17",
+  "version": 4,
+  "updated": "2026-10-20",
   "source": "文化局 wh.mo",
   "spots": {
     "st-paul": {
       "openHour": 0,
-      "closeHour": 24
+      "closeHour": 24,
+      "closedDays": []
     },
     "na-tcha": {
       "openHour": 8,
-      "closeHour": 17
+      "closeHour": 17,
+      "closedDays": []
     },
     "fortress": {
       "openHour": 7,
-      "closeHour": 19
+      "closeHour": 19,
+      "closedDays": []
     },
     "museum-macau": {
       "openHour": 10,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": [
+        1
+      ]
     },
     "st-dominic": {
       "openHour": 10,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": []
     },
     "senado-square": {
       "openHour": 0,
-      "closeHour": 24
+      "closeHour": 24,
+      "closedDays": []
     },
     "a-ma-temple": {
       "openHour": 7,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": []
     },
     "lou-kau": {
       "openHour": 10,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": [
+        1
+      ]
     },
     "se-cathedral": {
       "openHour": 8,
-      "closeHour": 20
+      "closeHour": 20,
+      "closedDays": []
     },
     "misericordia": {
       "openHour": 10,
-      "closeHour": 17
+      "closeHour": 17,
+      "closedDays": [
+        1
+      ]
     },
     "moorish-barracks": {
       "openHour": 9,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": []
     },
     "mandarin-house": {
       "openHour": 10,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": [
+        3
+      ]
     },
     "lilau": {
       "openHour": 0,
-      "closeHour": 24
+      "closeHour": 24,
+      "closedDays": []
     },
     "st-lawrence": {
       "openHour": 7,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": []
     },
     "guia-fortress": {
       "openHour": 9,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": []
     },
     "old-protestant-cemetery": {
       "openHour": 9,
-      "closeHour": 17
+      "closeHour": 17,
+      "closedDays": []
     },
     "osm-sam-kai-vui-kun-temple": {
       "openHour": 9,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": []
     },
     "osm-st-anthony-s-church": {
       "openHour": 7,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": []
     },
     "casa-garden": {
       "openHour": 10,
-      "closeHour": 19
+      "closeHour": 19,
+      "closedDays": [
+        1
+      ]
     },
     "st-augustine": {
       "openHour": 10,
-      "closeHour": 18
+      "closeHour": 18,
+      "closedDays": []
     },
     "ho-tung-library": {
       "openHour": 8,
-      "closeHour": 20
+      "closeHour": 20,
+      "closedDays": []
+    },
+    "dom-pedro": {
+      "openHour": 10,
+      "closeHour": 18,
+      "closedDays": [
+        2
+      ]
     }
+  },
+  "autoSync": {
+    "checked": "2026-10-20",
+    "ok": true,
+    "lastOk": "2026-10-20",
+    "failed": []
   }
 }
