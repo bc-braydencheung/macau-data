@@ -27,6 +27,7 @@ jobs:
           import datetime, html, json, math, re, sys, time, urllib.request
 
           BASE = 'https://www.wh.mo'
+          ICAL = 'https://www.gov.mo/zh-hant/public-holidays/ical/'
           DATA = sys.argv[1] if len(sys.argv) > 1 else 'macau_data.json'
 
           # app 地點 id → (wh.mo 頁, 名稱關鍵字, 分區標題, 分區完結標題, 用邊段時間)
@@ -106,6 +107,95 @@ jobs:
               return sorted({DAYS[c] for c in re.findall(r'星期([一二三四五六日天])', m.group(1))})
 
 
+          DAYSPEC = re.compile(
+              r'^星期([一二三四五六日天])(?:至(?:星期)?([一二三四五六日天]))?(?:及(?:星期)?([一二三四五六日天]))?\s*')
+          PH_OPEN = re.compile(r'公眾假期(?:除外|照常開放)')
+          PH_CLOSED = re.compile(r'及(?:澳門)?公眾假期休館')
+
+
+          def section(block, sub, until):
+              if sub is not None:
+                  if block.count(sub) != 1:
+                      raise Unreadable(f'搵唔到分區「{sub}」')
+                  block = block[block.index(sub) + 1:]
+              if until is not None:
+                  if until not in block:
+                      raise Unreadable(f'搵唔到分區「{until}」')
+                  block = block[:block.index(until)]
+              return block
+
+
+          def week_of(block, sub, until):
+              """逐日時間（分鐘）同公眾假期安排；睇唔明就 Unreadable，唔會估。"""
+              block = section(block, sub, until)
+              week = {d: [] for d in range(1, 8)}
+              closed, holiday, allday = set(), 'unknown', False
+              for line in block:
+                  if line.startswith('逢'):
+                      closed |= set(closure_days(line))
+                      if PH_CLOSED.search(line):
+                          holiday = 'closed'
+                      elif PH_OPEN.search(line):
+                          holiday = 'open'
+                      elif '公眾假期' in line:
+                          raise Unreadable(f'公眾假期字眼睇唔明：{line}')
+                      continue
+                  if line == '全日開放':
+                      allday = True
+                      continue
+                  m = DAYSPEC.match(line)
+                  days = set(range(1, 8))
+                  rest = line
+                  if m:
+                      a = DAYS[m.group(1)]
+                      b = DAYS[m.group(2)] if m.group(2) else a
+                      if b < a:
+                          raise Unreadable(f'日子範圍睇唔明：{line}')
+                      days = set(range(a, b + 1))
+                      if m.group(3):
+                          days.add(DAYS[m.group(3)])
+                      rest = line[m.end():]
+                  found = RANGE.findall(rest)
+                  left = RANGE.sub('', rest)
+                  left = re.sub(r'[（(]\d{1,2}:\d{2}停止入場[)）]', '', left)
+                  left = re.sub(r'^外廊[（(]\s*[)）]$', '', left.strip())
+                  if not found or BAD.search(rest) or re.sub(r'[\s，,、]', '', left):
+                      raise Unreadable(f'睇唔明：{line}')
+                  for d in days:
+                      for t in found:
+                          o, c = int(t[0]) * 60 + int(t[1]), int(t[2]) * 60 + int(t[3])
+                          if not 0 <= o < c <= 1440:
+                              raise Unreadable(f'時間唔合理：{line}')
+                          week[d].append([o, c])
+              if allday:
+                  if any(week.values()) or closed:
+                      raise Unreadable('全日開放但又有時間')
+                  week = {d: [[0, 1440]] for d in range(1, 8)}
+              for d in closed:
+                  week[d] = []
+              if not any(week.values()):
+                  raise Unreadable('冇任何開放時間')
+              for d in week:
+                  week[d].sort()
+              return {str(d): week[d] for d in range(1, 8)}, holiday
+
+
+          def holidays_from_ical(text):
+              """gov.mo iCal：淨係攞全日嘅（強制性）公眾假期；補假同「豁免上班」唔計。"""
+              out = set()
+              for ev in re.findall(r'BEGIN:VEVENT(.*?)END:VEVENT', text, re.S):
+                  d = re.search(r'DTSTART;VALUE=DATE:(\d{4})(\d{2})(\d{2})', ev)
+                  summ = re.search(r'SUMMARY:([^\r\n]*)', ev)
+                  if not d or not summ:
+                      continue
+                  s = summ.group(1)
+                  if '補假' in s or '豁免上班' in s:
+                      continue
+                  if '(強制性公眾假期)' in s or '(公眾假期)' in s:
+                      out.add('-'.join(d.groups()))
+              return out
+
+
           def parse(block, sub, until, pick, n):
               if sub is not None:
                   if block.count(sub) != 1:
@@ -160,7 +250,9 @@ jobs:
                           if kw not in name:
                               raise Unreadable(f'頁面名稱變咗：{name}')
                           o, c, days = parse(block, sub, until, pick, n)
-                          new = {'openHour': o, 'closeHour': c, 'closedDays': days}
+                          week, holiday = week_of(block, sub, until)
+                          new = {'openHour': o, 'closeHour': c, 'closedDays': days,
+                                 'week': week, 'holiday': holiday}
                           cur = spots.get(sid, {})
                           if any(cur.get(k) != v for k, v in new.items()):
                               changed.append(f'{sid}: {cur} → {new}')
@@ -174,6 +266,19 @@ jobs:
               except Exception as e:  # 成個網站讀唔到
                   ok, failed, error = False, sorted(SPECS), f'{type(e).__name__}: {e}'
                   notes.append(f'成個網站讀唔到：{error}')
+              try:
+                  req = urllib.request.Request(ICAL, headers={'User-Agent': 'Mozilla/5.0'})
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      hols = holidays_from_ical(r.read().decode('utf-8', 'ignore'))
+                  this_year = today[:4]
+                  if sum(1 for h in hols if h.startswith(this_year)) < 10:
+                      raise Unreadable(f'{this_year} 年得 {len(hols)} 日公眾假期')
+                  merged = sorted(set(data.get('holidays') or []) | hols)
+                  if merged != data.get('holidays'):
+                      changed.append(f'公眾假期：{len(merged)} 日')
+                      data['holidays'] = merged
+              except Exception as e:  # 讀唔到就照用舊嘅假期，唔影響開放時間
+                  notes.append(f'公眾假期（{ICAL}）讀唔到：{type(e).__name__}: {e}')
               if changed:
                   data['updated'] = today
               data['source'] = '文化局 wh.mo'
@@ -194,13 +299,12 @@ jobs:
                   print('未能更新', l)
               if notes:
                   open('sync_problems.md', 'w', encoding='utf-8').write(
-                      '文化局網站有啲開放時間讀唔明，呢啲景點今次冇自動更新，app 會顯示「資料未能更新」。'
+                      '文化局網站或者 gov.mo 公眾假期有啲資料讀唔明，呢啲景點今次冇自動更新，app 會顯示「資料未能更新」。'
                       '請叫 Devin 睇睇程式。\n\n' + '\n'.join(f'- {l}' for l in notes) + '\n')
 
 
           if __name__ == '__main__':
               main()
-
           PY
           python3 /tmp/wh_sync.py macau_data.json
 
