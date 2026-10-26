@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "updated": "2026-10-21",
   "source": "文化局 wh.mo",
   "spots": {
@@ -1111,9 +1111,9 @@
     }
   },
   "autoSync": {
-    "checked": "2026-10-21",
+    "checked": "2026-10-26",
     "ok": true,
-    "lastOk": "2026-10-21",
+    "lastOk": "2026-10-26",
     "failed": []
   },
   "holidays": [
